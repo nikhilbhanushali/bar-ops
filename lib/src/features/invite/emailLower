@@ -1,0 +1,11 @@
+{
+  "email": "store1@barops.test",
+  "role": "store",
+  "code": "A7C4X9",          // 6-char code you share with the user
+  "status": "pending",       // pending | used | cancelled | expired
+  "createdBy": "{adminUid}",
+  "createdAt": "ISO",
+  "expiresAt": "ISO|null",
+  "usedBy": null,
+  "usedAt": null
+}

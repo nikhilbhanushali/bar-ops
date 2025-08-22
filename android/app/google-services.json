@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "354769746711",
+    "project_id": "bar-ops",
+    "storage_bucket": "bar-ops.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:354769746711:android:1c27fa48068b34166b1552",
+        "android_client_info": {
+          "package_name": "com.example.bar_ops"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDb52tOpHGdP1IfKng0hZ1Jtx9Ohb-QCFc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

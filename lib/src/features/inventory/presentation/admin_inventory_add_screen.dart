@@ -1,0 +1,178 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../providers/inventory_providers.dart';
+
+
+class AdminAddInventoryScreen extends ConsumerStatefulWidget {
+  const AdminAddInventoryScreen({super.key});
+
+  @override
+  ConsumerState<AdminAddInventoryScreen> createState() => _AdminAddInventoryScreenState();
+}
+
+class _AdminAddInventoryScreenState extends ConsumerState<AdminAddInventoryScreen> {
+  final _form = GlobalKey<FormState>();
+  final _title = TextEditingController();
+  final _part = TextEditingController();
+  final _uom = TextEditingController(text: 'pcs');
+  final _specs = TextEditingController();
+  final _price = TextEditingController();
+  final _vendor = TextEditingController();
+  final _minStock = TextEditingController(text: '0');
+  final _openingStock = TextEditingController(text: '0');
+
+  String _category = 'tools';
+  bool _loading = false;
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _part.dispose();
+    _uom.dispose();
+    _specs.dispose();
+    _price.dispose();
+    _vendor.dispose();
+    _minStock.dispose();
+    _openingStock.dispose();
+    super.dispose();
+  }
+
+  double? _num(String s) {
+    final t = s.trim();
+    if (t.isEmpty) return null;
+    return double.tryParse(t.replaceAll(',', ''));
+  }
+
+  String _unwrapError(Object e) {
+    if (e is AsyncError) return _unwrapError(e.error ?? 'Unknown error');
+    final s = e.toString();
+    return s.startsWith('Exception: ') ? s.substring(11) : s;
+  }
+
+  Future<void> _save() async {
+    if (!_form.currentState!.validate()) return;
+    setState(() => _loading = true);
+    try {
+      final repo = ref.read(inventoryRepoProvider);
+      final id = await repo.adminCreateItem(
+        title: _title.text,
+        category: _category,
+        vendorId: _vendor.text.trim().isEmpty ? null : _vendor.text.trim(),
+        partNumber: _part.text,
+        uom: _uom.text,
+        specs: _specs.text,
+        initPrice: _num(_price.text),
+        minStock: _num(_minStock.text),
+        openingStock: _num(_openingStock.text),
+      );
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Inventory created ($id)')),
+      );
+    } catch (e, st) {
+      if (!mounted) return;
+      final msg = _unwrapError(e);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $msg')));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const sp = 12.0;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Add Inventory (Admin)')),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Form(
+          key: _form,
+          child: Column(children: [
+            DropdownButtonFormField(
+              value: _category,
+              items: const [
+                DropdownMenuItem(value: 'tools', child: Text('Tools')),
+                DropdownMenuItem(value: 'asset', child: Text('Asset')),
+                DropdownMenuItem(value: 'raw', child: Text('Raw')),
+              ],
+              onChanged: (v) => setState(() => _category = v as String),
+              decoration: const InputDecoration(labelText: 'Category'),
+            ),
+            SizedBox(height: sp),
+            TextFormField(
+              controller: _title,
+              decoration: const InputDecoration(labelText: 'Title'),
+              validator: (v) => (v == null || v.isEmpty) ? 'Enter title' : null,
+            ),
+            SizedBox(height: sp),
+            TextFormField(
+              controller: _part,
+              decoration: const InputDecoration(labelText: 'Part Number / SKU'),
+              validator: (v) => (v == null || v.isEmpty) ? 'Enter part number' : null,
+            ),
+            SizedBox(height: sp),
+            TextFormField(
+              controller: _uom,
+              decoration: const InputDecoration(labelText: 'UoM'),
+              validator: (v) => (v == null || v.isEmpty) ? 'Enter unit' : null,
+            ),
+            SizedBox(height: sp),
+            TextFormField(
+              controller: _vendor,
+              decoration: const InputDecoration(labelText: 'Vendor ID (optional)'),
+            ),
+            SizedBox(height: sp),
+            TextFormField(
+              controller: _specs,
+              decoration: const InputDecoration(labelText: 'Specs (optional)'),
+              maxLines: 2,
+            ),
+            SizedBox(height: sp),
+            TextFormField(
+              controller: _price,
+              decoration: const InputDecoration(labelText: 'Initial price (optional)'),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            ),
+            SizedBox(height: sp),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _minStock,
+                    decoration: const InputDecoration(labelText: 'Min Stock'),
+                    keyboardType: TextInputType.number,
+                    validator: (v) => (v == null || double.tryParse(v.replaceAll(',', '')) == null)
+                        ? 'Enter a number'
+                        : null,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextFormField(
+                    controller: _openingStock,
+                    decoration: const InputDecoration(labelText: 'Opening Stock'),
+                    keyboardType: TextInputType.number,
+                    validator: (v) => (v == null || double.tryParse(v.replaceAll(',', '')) == null)
+                        ? 'Enter a number'
+                        : null,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: sp),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _loading ? null : _save,
+                child: _loading ? const CircularProgressIndicator() : const Text('Create'),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}

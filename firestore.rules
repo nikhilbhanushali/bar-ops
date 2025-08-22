@@ -1,0 +1,35 @@
+// Phase-1 minimal rules (Auth + Dashboard)
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(db)/documents/users/$(request.auth.uid))
+        && get(/databases/$(db)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Users
+    match /users/{uid} {
+      allow read: if isSelf(uid) || isAdmin();
+      allow create, update, delete: if isAdmin();
+
+      // (Optional) allow self-update of non-privileged fields only:
+      allow update: if isSelf(uid)
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly(["displayName","phone","updatedAt","updatedBy"]);
+    }
+
+    // Everything else locked for now
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
