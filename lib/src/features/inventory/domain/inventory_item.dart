@@ -10,12 +10,21 @@ class InventoryItem {
   final String uom;
   final String specs;
   final double currentPrice;
-  final double minStock;
+
+  // Stock controls
+  final double minStock;       // your existing field
   final double openingStock;
-  final String uniKey;     // v2|category|vendor|canonPart
+  final double currentStock;   // NEW: used by list/detail UIs
+
+  final String uniKey;         // v2|category|vendor|canonPart
   final String? legacyUniKey;
-  final String createdAt;  // ISO if string; Timestamp acceptable in parsing
+  final String createdAt;      // ISO if string; Timestamp acceptable in parsing
   final String updatedAt;
+
+  // ----- Compatibility getters -----
+  // Some screens expect these names:
+  double get minQty => minStock;     // alias for minStock
+  double get currentQty => currentStock;
 
   InventoryItem({
     required this.id,
@@ -29,6 +38,7 @@ class InventoryItem {
     required this.currentPrice,
     required this.minStock,
     required this.openingStock,
+    required this.currentStock,   // NEW
     required this.uniKey,
     required this.legacyUniKey,
     required this.createdAt,
@@ -62,6 +72,7 @@ class InventoryItem {
       currentPrice: _toDouble(m['currentPrice']),
       minStock: _toDouble(m['minStock']),
       openingStock: _toDouble(m['openingStock']),
+      currentStock: _toDouble(m['currentStock']), // NEW (defaults to 0 if missing)
       uniKey: (m['uniKey'] ?? '') as String,
       legacyUniKey: m['legacyUniKey'] as String?,
       createdAt: _toIso(m['createdAt']),
@@ -73,6 +84,6 @@ class InventoryItem {
     'title': title,
     'uom': uom,
     'specs': specs,
-    // we’re not letting UI mass-edit min/open here yet
+    // we’re not letting UI mass-edit min/open/current here yet
   };
 }

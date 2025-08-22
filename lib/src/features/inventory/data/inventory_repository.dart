@@ -57,6 +57,19 @@ class InventoryRepository {
     return 'v2|$cat|$ven|$canonPart';
   }
 
+  // NEW: v3 considers BOTH title + partNumber for canon
+  static String _v3UniKey({
+    required String category,
+    String? vendorId,
+    required String title,
+    required String partNumber,
+  }) {
+    final cat = _normalize(category);
+    final ven = _idSafe(vendorId);
+    final canon = _canonicalTokensKey('$title $partNumber');
+    return 'v3|$cat|$ven|$canon';
+  }
+
   static String _nowIso() => DateTime.now().toUtc().toIso8601String();
 
   static String _humanizeError(Object e) {
@@ -148,13 +161,40 @@ class InventoryRepository {
         vendorId: sub.vendorId,
         partNumber: sub.partNumber,
       );
+      final v3Key = _v3UniKey(
+        category: sub.category,
+        vendorId: sub.vendorId,
+        title: sub.title,
+        partNumber: sub.partNumber,
+      );
 
       final legacyRef = _db.collection('inventory_index').doc(legacyKey);
       final v2Ref = _db.collection('inventory_index').doc(v2Key);
+      final v3Ref = _db.collection('inventory_index').doc(v3Key);
 
-      final existing = await Future.wait([legacyRef.get(), v2Ref.get()]);
-      if (existing[0].exists || existing[1].exists) {
-        return Future.error('duplicate-item: same category/vendor/part number already exists');
+      // --- Duplicate check with backward compatibility ---
+      final checks = await Future.wait([v3Ref.get(), v2Ref.get()]);
+      final v3Exists = checks[0].exists;
+      final v2Snap = checks[1];
+
+      if (v3Exists) {
+        return Future.error('duplicate-item: same title+partNumber under category/vendor already exists');
+      }
+
+      if (v2Snap.exists) {
+        // v2 collision on partNumber: verify if the existing item has same canon(title+part).
+        final itemId = v2Snap.data()?['itemId']?.toString();
+        if (itemId != null && itemId.isNotEmpty) {
+          final inv = await _db.collection('inventory').doc(itemId).get();
+          if (inv.exists) {
+            final m = inv.data() ?? {};
+            final oldCanon = _canonicalTokensKey('${m['title'] ?? ''} ${m['partNumber'] ?? ''}');
+            final newCanon = _canonicalTokensKey('${sub.title} ${sub.partNumber}');
+            if (oldCanon == newCanon) {
+              return Future.error('duplicate-item: same title+partNumber under category/vendor already exists');
+            }
+          }
+        }
       }
 
       final itemRef = _db.collection('inventory').doc();
@@ -174,26 +214,34 @@ class InventoryRepository {
         'currentPrice': sub.initPrice ?? 0.0,
         'minStock': sub.minStock,
         'openingStock': sub.openingStock,
+        'currentStock': (sub.openingStock ?? 0.0),
         'createdBy': adminUid,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedBy': adminUid,
         'updatedAt': FieldValue.serverTimestamp(),
-        'uniKey': v2Key,
+        'uniKey': v2Key,     // keep v2 for compatibility
+        'uniKeyV3': v3Key,   // NEW
         'legacyUniKey': legacyKey,
       });
 
+      // index docs
       batch.set(legacyRef, {
         'itemId': itemRef.id,
         'createdAt': nowIso,
         'createdBy': adminUid,
         'keyType': 'legacy',
       });
-
       batch.set(v2Ref, {
         'itemId': itemRef.id,
         'createdAt': nowIso,
         'createdBy': adminUid,
         'keyType': 'v2',
+      });
+      batch.set(v3Ref, {
+        'itemId': itemRef.id,
+        'createdAt': nowIso,
+        'createdBy': adminUid,
+        'keyType': 'v3',
       });
 
       if (sub.initPrice != null) {
@@ -221,7 +269,7 @@ class InventoryRepository {
     }
   }
 
-  // ---------- ADMIN: reject submission (ADDED) ----------
+  // ---------- ADMIN: reject submission ----------
   Future<void> rejectSubmission(InventorySubmission sub, {String? reason}) async {
     final adminUid = _auth.currentUser?.uid;
     if (adminUid == null) return Future.error('not-signed-in');
@@ -269,13 +317,39 @@ class InventoryRepository {
         vendorId: vendorId,
         partNumber: partNumber,
       );
+      final v3Key = _v3UniKey(
+        category: category,
+        vendorId: vendorId,
+        title: title,
+        partNumber: partNumber,
+      );
 
       final legacyRef = _db.collection('inventory_index').doc(legacyKey);
       final v2Ref = _db.collection('inventory_index').doc(v2Key);
+      final v3Ref = _db.collection('inventory_index').doc(v3Key);
 
-      final existing = await Future.wait([legacyRef.get(), v2Ref.get()]);
-      if (existing[0].exists || existing[1].exists) {
-        return Future.error('duplicate-item: same category/vendor/part number already exists');
+      // --- Duplicate check with backward compatibility ---
+      final checks = await Future.wait([v3Ref.get(), v2Ref.get()]);
+      final v3Exists = checks[0].exists;
+      final v2Snap = checks[1];
+
+      if (v3Exists) {
+        return Future.error('duplicate-item: same title+partNumber under category/vendor already exists');
+      }
+
+      if (v2Snap.exists) {
+        final itemId = v2Snap.data()?['itemId']?.toString();
+        if (itemId != null && itemId.isNotEmpty) {
+          final inv = await _db.collection('inventory').doc(itemId).get();
+          if (inv.exists) {
+            final m = inv.data() ?? {};
+            final oldCanon = _canonicalTokensKey('${m['title'] ?? ''} ${m['partNumber'] ?? ''}');
+            final newCanon = _canonicalTokensKey('$title $partNumber');
+            if (oldCanon == newCanon) {
+              return Future.error('duplicate-item: same title+partNumber under category/vendor already exists');
+            }
+          }
+        }
       }
 
       final itemRef = _db.collection('inventory').doc();
@@ -292,29 +366,37 @@ class InventoryRepository {
         'partNumber': partNumber.trim(),
         'uom': uom.trim(),
         'specs': specs.trim(),
-        'currentPrice': initPrice ?? 0.0,
+        'currentPrice': (initPrice ?? 0.0).toDouble(),
         'minStock': (minStock ?? 0.0).toDouble(),
         'openingStock': (openingStock ?? 0.0).toDouble(),
+        'currentStock': (openingStock ?? 0.0).toDouble(), // init = opening
         'createdBy': adminUid,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedBy': adminUid,
         'updatedAt': FieldValue.serverTimestamp(),
-        'uniKey': v2Key,
+        'uniKey': v2Key,     // keep v2 for compatibility
+        'uniKeyV3': v3Key,   // NEW
         'legacyUniKey': legacyKey,
       });
 
+      // index docs
       batch.set(legacyRef, {
         'itemId': itemRef.id,
         'createdAt': nowIso,
         'createdBy': adminUid,
         'keyType': 'legacy',
       });
-
       batch.set(v2Ref, {
         'itemId': itemRef.id,
         'createdAt': nowIso,
         'createdBy': adminUid,
         'keyType': 'v2',
+      });
+      batch.set(v3Ref, {
+        'itemId': itemRef.id,
+        'createdAt': nowIso,
+        'createdBy': adminUid,
+        'keyType': 'v3',
       });
 
       if (initPrice != null) {
@@ -393,7 +475,7 @@ class InventoryRepository {
     }
   }
 
-  // ---------- ADMIN: delete item + both index docs ----------
+  // ---------- ADMIN: delete item + all index docs ----------
   Future<void> deleteItem({required InventoryItem item}) async {
     try {
       final itemRef = _db.collection('inventory').doc(item.id);
@@ -408,9 +490,16 @@ class InventoryRepository {
         vendorId: item.vendorId,
         partNumber: item.partNumber,
       );
+      final v3Key = _v3UniKey(
+        category: item.category,
+        vendorId: item.vendorId,
+        title: item.title,
+        partNumber: item.partNumber,
+      );
 
       final legacyIndexRef = _db.collection('inventory_index').doc(legacyKey);
       final v2IndexRef = _db.collection('inventory_index').doc(v2Key);
+      final v3IndexRef = _db.collection('inventory_index').doc(v3Key);
 
       final logsSnap = await itemRef.collection('priceLogs').get();
 
@@ -421,6 +510,7 @@ class InventoryRepository {
       batch.delete(itemRef);
       batch.delete(legacyIndexRef);
       batch.delete(v2IndexRef);
+      batch.delete(v3IndexRef);
       await batch.commit();
     } catch (e, st) {
       return Future.error(_humanizeError(e), st);

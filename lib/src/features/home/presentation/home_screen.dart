@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-
 import '../../auth/providers/auth_providers.dart';
 import '../../debug/ops_diagnostics_screen.dart';
 import '../../inventory/presentation/admin_inventory_add_screen.dart';
@@ -14,7 +13,8 @@ import '../../inventory/presentation/store_add_inventory_screen.dart';
 import '../../users/presentation/user_list_screen.dart';
 import '../../vendors/presentation/vendor_list_screen.dart';
 
-
+// ✅ Gatepass
+import '../../gatepass/presentation/gatepass_list_screen.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -59,6 +59,7 @@ class HomeScreen extends ConsumerWidget {
 
           final isAdmin = role == 'admin';
           final isStore = role == 'store';
+          final canCreateGatepass = isAdmin || isStore; // view-only for others
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
@@ -71,6 +72,7 @@ class HomeScreen extends ConsumerWidget {
                   spacing: 12,
                   runSpacing: 12,
                   children: [
+                    // ------ Inventory ------
                     _DashButton(
                       icon: Icons.inventory_2,
                       label: 'Inventory',
@@ -126,6 +128,19 @@ class HomeScreen extends ConsumerWidget {
                       ),
                     ),
 
+                    // ✅ ------ Gatepass ------
+                    _DashButton(
+                      icon: Icons.local_shipping_outlined,
+                      label: canCreateGatepass ? 'Gatepass (View & Create)' : 'Gatepass (View only)',
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => GatepassListScreen(canCreate: canCreateGatepass),
+                        ),
+                      ),
+                    ),
+
+                    // ------ Users / Diagnostics ------
                     if (isAdmin)
                       _DashButton(
                         icon: Icons.group,
